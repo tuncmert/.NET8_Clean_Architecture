@@ -1,4 +1,5 @@
-﻿using App.Application.Contracts.Persistence;
+﻿using App.Application.Contracts.Caching;
+using App.Application.Contracts.Persistence;
 using App.Application.Features.Products.Create;
 using App.Application.Features.Products.Dto;
 using App.Application.Features.Products.Update;
@@ -14,8 +15,10 @@ using System.Threading.Tasks;
 
 namespace App.Application.Features.Products
 {
-    public class ProductService(IProductRepository productRepository, IUnityOfWork unityOfWork, IMapper mapper) : IProductService
+    public class ProductService(IProductRepository productRepository, IUnityOfWork unityOfWork, IMapper mapper, ICacheService cacheService) : IProductService
     {
+        private const string productListCacheKey = "ProductListCacheKey";
+
         public async Task<ServiceResult<CreateProductResponse>> CreateAsync(CreateProductRequest request)
         {
             var anyProduct = await productRepository.AnyAsync(x => x.Name == request.Name);
@@ -39,9 +42,19 @@ namespace App.Application.Features.Products
 
         public async Task<ServiceResult<List<ProductDto>>> GetAllListAsync()
         {
+            //cache aside desing pattern
+            //1. cache control
+            //2. from db
+            //3. caching data
+
+            var productListAsCached = await cacheService.GetAsync<List<ProductDto>>(productListCacheKey);
+            if (productListAsCached is not null) return ServiceResult<List<ProductDto>>.Success(productListAsCached);
+
+
             var products = await productRepository.GetAllAsync();
 
             var productAsDto = mapper.Map<List<ProductDto>>(products);
+            await cacheService.AddAsync(productListCacheKey, productAsDto,TimeSpan.FromMinutes(1));
             return ServiceResult<List<ProductDto>>.Success(productAsDto);
         }
 
